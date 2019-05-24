@@ -5,6 +5,9 @@ declare module '@react-navigation/core' {
     completeTransition<T extends { key?: string } | undefined>(
       options?: T
     ): { type: string } & T;
+    pop<T extends { key?: string; immediate?: boolean } | undefined>(
+      options?: T
+    ): { type: string } & T;
   };
 
   export const NavigationActions: {

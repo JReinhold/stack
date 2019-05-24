@@ -2,47 +2,59 @@ import * as React from 'react';
 import {
   I18nManager,
   Image,
-  Text,
   View,
   Platform,
   StyleSheet,
   LayoutChangeEvent,
+  MaskedViewIOS,
 } from 'react-native';
-
+import Animated from 'react-native-reanimated';
 import TouchableItem from '../TouchableItem';
+import { Layout } from '../../types';
 
-import defaultBackImage from '../assets/back-icon.png';
-import BackButtonWeb from './BackButtonWeb';
-import { HeaderBackbuttonProps } from '../../types';
-
-type State = {
-  initialTextWidth?: number;
+type Props = {
+  disabled?: boolean;
+  onPress: () => void;
+  pressColorAndroid?: string;
+  backImage?: (props: { tintColor: string; title?: string }) => React.ReactNode;
+  tintColor: string;
+  title?: string;
+  fallbackTitle?: string;
+  backTitleVisible?: boolean;
+  allowFontScaling?: boolean;
+  titleStyle?: React.ComponentProps<typeof Animated.Text>['style'];
+  onTitleLayout?: (e: LayoutChangeEvent) => void;
+  layout?: Layout;
 };
 
-class HeaderBackButton extends React.PureComponent<
-  HeaderBackbuttonProps,
-  State
-> {
+type State = {
+  initialTitleWidth?: number;
+};
+
+class HeaderBackButton extends React.Component<Props, State> {
   static defaultProps = {
     pressColorAndroid: 'rgba(0, 0, 0, .32)',
     tintColor: Platform.select({
       ios: '#037aff',
       web: '#5f6368',
     }),
-    truncatedTitle: 'Back',
-    backImage: Platform.select({
-      web: BackButtonWeb,
-    }),
+    backTitleVisible: Platform.OS === 'ios',
+    fallbackTitle: 'Back',
   };
 
   state: State = {};
 
-  private handleTextLayout = (e: LayoutChangeEvent) => {
-    if (this.state.initialTextWidth) {
+  private handleTitleLayout = (e: LayoutChangeEvent) => {
+    const { onTitleLayout } = this.props;
+
+    onTitleLayout && onTitleLayout(e);
+
+    if (this.state.initialTitleWidth) {
       return;
     }
+
     this.setState({
-      initialTextWidth: e.nativeEvent.layout.x + e.nativeEvent.layout.width,
+      initialTitleWidth: e.nativeEvent.layout.x + e.nativeEvent.layout.width,
     });
   };
 
@@ -51,12 +63,8 @@ class HeaderBackButton extends React.PureComponent<
 
     let title = this.getTitleText();
 
-    if (React.isValidElement(backImage)) {
-      return backImage;
-    } else if (backImage) {
-      const BackImage = backImage;
-
-      return <BackImage tintColor={tintColor} title={title} />;
+    if (backImage) {
+      return backImage({ tintColor, title });
     } else {
       return (
         <Image
@@ -65,7 +73,7 @@ class HeaderBackButton extends React.PureComponent<
             !!backTitleVisible && styles.iconWithTitle,
             !!tintColor && { tintColor },
           ]}
-          source={defaultBackImage}
+          source={require('../assets/back-icon.png')}
           fadeDuration={0}
         />
       );
@@ -73,16 +81,18 @@ class HeaderBackButton extends React.PureComponent<
   }
 
   private getTitleText = () => {
-    const { width, title, truncatedTitle } = this.props;
+    const { layout, title, fallbackTitle } = this.props;
 
-    let { initialTextWidth } = this.state;
+    let { initialTitleWidth } = this.state;
 
-    if (title === null) {
-      return null;
-    } else if (!title) {
-      return truncatedTitle;
-    } else if (initialTextWidth && width && initialTextWidth > width) {
-      return truncatedTitle;
+    if (!title) {
+      return fallbackTitle;
+    } else if (
+      initialTitleWidth &&
+      layout &&
+      initialTitleWidth > layout.width / 4
+    ) {
+      return fallbackTitle;
     } else {
       return title;
     }
@@ -92,32 +102,60 @@ class HeaderBackButton extends React.PureComponent<
     const {
       allowFontScaling,
       backTitleVisible,
+      backImage,
       titleStyle,
       tintColor,
+      layout,
     } = this.props;
+
     let backTitleText = this.getTitleText();
 
-    if (!backTitleVisible || backTitleText === null) {
+    if (!backTitleVisible || backTitleText === undefined) {
       return null;
     }
 
-    return (
-      <Text
+    const title = (
+      <Animated.Text
         accessible={false}
-        onLayout={this.handleTextLayout}
-        style={[styles.title, !!tintColor && { color: tintColor }, titleStyle]}
+        onLayout={this.handleTitleLayout}
+        style={[
+          styles.title,
+          layout ? { marginRight: layout.width / 2 } : null,
+          tintColor ? { color: tintColor } : null,
+          titleStyle,
+        ]}
         numberOfLines={1}
         allowFontScaling={!!allowFontScaling}
       >
         {this.getTitleText()}
-      </Text>
+      </Animated.Text>
+    );
+
+    if (backImage) {
+      return title;
+    }
+
+    return (
+      <MaskedViewIOS
+        maskElement={
+          <View style={styles.iconMaskContainer}>
+            <Image
+              source={require('../assets/back-icon-mask.png')}
+              style={styles.iconMask}
+            />
+            <View style={styles.iconMaskFillerRect} />
+          </View>
+        }
+      >
+        {title}
+      </MaskedViewIOS>
     );
   }
 
   render() {
     const { onPress, pressColorAndroid, title, disabled } = this.props;
 
-    let button = (
+    return (
       <TouchableItem
         disabled={disabled}
         accessible
@@ -130,52 +168,44 @@ class HeaderBackButton extends React.PureComponent<
         onPress={disabled ? undefined : onPress}
         pressColor={pressColorAndroid}
         style={[styles.container, disabled && styles.disabled]}
+        hitSlop={Platform.select({
+          ios: undefined,
+          default: { top: 8, right: 8, bottom: 8, left: 8 },
+        })}
         borderless
       >
-        <View style={styles.container}>
+        <React.Fragment>
           {this.renderBackImage()}
           {this.maybeRenderTitle()}
-        </View>
+        </React.Fragment>
       </TouchableItem>
     );
-
-    if (Platform.OS === 'ios') {
-      return button;
-    } else {
-      return <View style={styles.androidButtonWrapper}>{button}</View>;
-    }
   }
 }
 
 const styles = StyleSheet.create({
-  disabled: {
-    opacity: 0.5,
-  },
-  androidButtonWrapper: {
-    margin: 13,
-    backgroundColor: 'transparent',
-    ...Platform.select({
-      web: {
-        marginLeft: 21,
-      },
-      default: {},
-    }),
-  },
   container: {
     alignItems: 'center',
     flexDirection: 'row',
-    backgroundColor: 'transparent',
+    ...Platform.select({
+      ios: null,
+      default: {
+        marginVertical: 3,
+        marginHorizontal: 11,
+      },
+    }),
+  },
+  disabled: {
+    opacity: 0.5,
   },
   title: {
     fontSize: 17,
-    paddingRight: 10,
   },
   icon: Platform.select({
     ios: {
-      backgroundColor: 'transparent',
       height: 21,
       width: 13,
-      marginLeft: 9,
+      marginLeft: 8,
       marginRight: 22,
       marginVertical: 12,
       resizeMode: 'contain',
@@ -186,7 +216,6 @@ const styles = StyleSheet.create({
       width: 24,
       margin: 3,
       resizeMode: 'contain',
-      backgroundColor: 'transparent',
       transform: [{ scaleX: I18nManager.isRTL ? -1 : 1 }],
     },
   }),
@@ -196,6 +225,24 @@ const styles = StyleSheet.create({
           marginRight: 6,
         }
       : {},
+  iconMaskContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  iconMaskFillerRect: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  iconMask: {
+    height: 21,
+    width: 13,
+    marginLeft: -14.5,
+    marginVertical: 12,
+    alignSelf: 'center',
+    resizeMode: 'contain',
+    transform: [{ scaleX: I18nManager.isRTL ? -1 : 1 }],
+  },
 });
 
 export default HeaderBackButton;
